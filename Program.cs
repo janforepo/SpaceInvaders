@@ -2,9 +2,11 @@
 using Raylib_cs;
 using System.Collections.Generic;
 using System.Security.Cryptography.X509Certificates;
+using System.Reflection.Metadata.Ecma335;
 
 class GameWindow
 {
+    public static int FPS = 60;
     public static void Main()
     {
         int gameWindowX = 800;
@@ -12,17 +14,15 @@ class GameWindow
 
         R.InitWindow(gameWindowX, gameWindowY, "Space Invaders");
          
-        int FPS = 60;
         R.SetTargetFPS(FPS);
-        int frameCounter = 0;
+        int spawnTimer = 0;
         Random random = new Random();
         int spawnInterval = random.Next(2, 6) * FPS;
-
-
 
         Player player = new Player(gameWindowX, gameWindowY);
         List<Rocket> rockets = new List<Rocket>();
         List<Enemy> enemies = new List<Enemy>();
+        List<Rocket> enemyRockets = new List<Rocket>();
 
         while (!R.WindowShouldClose())
         {
@@ -33,24 +33,15 @@ class GameWindow
             player.Draw();
             if (R.IsKeyPressed(KeyboardKey.Space) || R.IsMouseButtonPressed(MouseButton.Left))
             {
-                rockets.Add(player.TryShoot());
+                rockets.Add(player.Shoot());
             }
 
-            
-            foreach (var rocket in rockets)
-            {
-                rocket.Move();
-                rocket.Draw();
-            }
-
-            rockets.RemoveAll(r => r.IsOutOfBounds(gameWindowY));
-
-            frameCounter++;
-            if (frameCounter >= spawnInterval)
+            spawnTimer++;
+            if (spawnTimer >= spawnInterval)
             {
                 enemies.Add(new Enemy(gameWindowX));
 
-                frameCounter = 0;
+                spawnTimer = 0;
                 spawnInterval = random.Next(3, 11) * FPS;
             }
 
@@ -58,15 +49,46 @@ class GameWindow
             {
                 enemy.Move();
                 enemy.Draw();
+                Rocket? newRocket = enemy.TryShoot();
+                if (newRocket != null)
+                {
+                    enemyRockets.Add(newRocket);
+                }
             }
+            foreach (var rocket in enemyRockets)
+            {
+                rocket.Move();
+                rocket.Draw();
+            }
+
+            foreach (var rocket in rockets)
+            {
+                rocket.Move();
+                rocket.Draw();
+            }
+
+            rockets.RemoveAll(r => r.IsUpOutOfBounds(gameWindowY));
+            enemyRockets.RemoveAll(r => r.IsDownOutOfBounds(gameWindowY));
             
-            foreach (var rocket in rockets.ToList())
+            foreach (var enemyRocket in enemyRockets.ToList())
+            {
+                foreach (var playerRocket in rockets.ToList())
+                {
+                    if (R.CheckCollisionRecs(playerRocket.GetRectangle(), enemyRocket.GetRectangle()))
+                    {
+                        enemyRockets.Remove(enemyRocket);
+                        rockets.Remove(playerRocket);
+                    }                    
+                }
+            }
+
+            foreach (var playerRocket in rockets.ToList())
             {
                 foreach (var enemy in enemies.ToList())
                 {
-                    if (R.CheckCollisionRecs(rocket.GetRectangle(), enemy.GetRectangle()))
+                    if (R.CheckCollisionRecs(playerRocket.GetRectangle(), enemy.GetRectangle()))
                     {
-                        rockets.Remove(rocket);
+                        rockets.Remove(playerRocket);
                         enemies.Remove(enemy);
                     }
                 }
@@ -126,7 +148,7 @@ public class Player
         R.DrawRectangle(x, y, width, height, Color.Green);
     }
 
-    public Rocket TryShoot()
+    public Rocket Shoot()
     {
             return new Rocket(this);
     }
@@ -154,7 +176,7 @@ public class Rocket
     private int y;
     private int width = 5;
     private int height = 10;
-    private int speed = 10;
+    private int speed;
 
     // Konstruktor – nastaví počáteční souřadnice při vytvoření střely
     public Rocket(int startX, int startY)
@@ -167,12 +189,20 @@ public class Rocket
     {
         x = player.GetX() + (player.GetWidth() / 2) - (width / 2); // Střela se objeví uprostřed hráče
         y = player.GetY();
+        speed = -10;
+    }
+
+    public Rocket(Enemy enemy)
+    {
+        x = enemy.GetX() + (enemy.GetWidth() / 2) - (width / 2); // Střela se objeví uprostřed nepřítele
+        y = enemy.GetY();
+        speed = 7;
     }
 
     // Pohyb střely směrem vzhůru
     public void Move()
     {
-        y -= speed;
+        y += speed;
     }
 
     // Vykreslení střely na obrazovku
@@ -181,9 +211,14 @@ public class Rocket
         R.DrawRectangle(x, y, width, height, Color.Red);
     }
 
-    public bool IsOutOfBounds(int gameWindowY)
+    public bool IsUpOutOfBounds(int gameWindowY)
     {
         return y < -height;
+    }
+
+    public bool IsDownOutOfBounds(int gameWindowY)
+    {
+        return y > gameWindowY;
     }
 
     public Rectangle GetRectangle()
@@ -199,12 +234,15 @@ public class Enemy
     private int width = 20;
     private int height = 30;
     private int speed = 2;
+    private int shootTimer = 0;
+    private float shootInterval;
+    Random random = new Random();
 
     public Enemy(int gameWindowX)
     {
-        Random random = new Random();
         x = random.Next(0, gameWindowX - width);
         y = -height;
+        shootInterval = random.Next(1, 3) * GameWindow.FPS;
     }
 
     public void Move()
@@ -220,6 +258,33 @@ public class Enemy
     public Rectangle GetRectangle()
     {
         return new Rectangle(x, y, width, height);
+    }
+
+    public Rocket? TryShoot()
+    {
+        shootTimer ++;
+        if (shootTimer >= shootInterval)
+        {
+            shootTimer = 0;
+            shootInterval = random.Next(1, 3) * GameWindow.FPS;
+            return new Rocket(this);
+        }
+        return null;
+    }
+
+    public int GetX()
+    {
+        return x;
+    }
+
+    public int GetY()
+    {
+        return y;
+    }
+
+    public int GetWidth()
+    {
+        return width;
     }
 
 }
